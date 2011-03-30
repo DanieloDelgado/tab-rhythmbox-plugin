@@ -1,4 +1,4 @@
-# -*- coding: iso-8859-15 -*-
+# -*- coding: utf-8 -*-
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,186 +28,353 @@ import rb, rhythmdb
 import gtk, gobject
 import gconf
 import webkit
+import pango
 import re
-import unicodedata
-import urllib
-from lxml.html import fromstring
-from lxml import etree
-from GuitareTabParser import GuitareTabParser
-from UltimateGuitarParser import UltimateGuitarParser
-from AZChordsParser import AZChordsParser
+#from lxml.html import fromstring
+#from lxml import etree
+from parser.GuitareTabParser import GuitareTabParser
+from parser.UltimateGuitarParser import UltimateGuitarParser
+from parser.AZChordsParser import AZChordsParser
+from parser.LacuerdaParser import LacuerdaParser
 from Tab import Tab
 from TabSites import tab_sites
+from Helper import remove_accents
 
 tab_search_ui = """
 <ui>
-    <toolbar name="ToolBar">
-        <toolitem name="TabSearch" action="ToggleTabSearch" />
-    </toolbar>
+	<toolbar name="ToolBar">
+		<toolitem name="TabSearch-1" action="ToggleTabSearch" />
+	</toolbar>
 </ui>
 """
 
-class TabSearch (gobject.GObject) :
+class TabSearch(gobject.GObject):
+	def __init__(self, shell, plugin, gconf_keys):
+		gobject.GObject.__init__(self)
+		self.shell = shell
+		self.sp = shell.get_player()
+		self.db = shell.get_property('db')
+		self.plugin = plugin
 
-    def __init__ (self, shell, plugin, gconf_keys) :
-        gobject.GObject.__init__ (self)
-        self.shell = shell
-        self.sp = shell.get_player ()
-        self.db = shell.get_property ('db')
-        self.plugin = plugin
+		self.gconf = gconf.client_get_default()
+		self.gconf_keys = gconf_keys
+		self.sites = self.get_sites()
+		self.tab_list = []
+		self.info_tab = Tab('Info', 'Infos\n=====')
 
-	self.gconf = gconf.client_get_default()
-	self.gconf_keys = gconf_keys
-	self.sites = self.get_sites()
-	self.tab_list = []
+		self.visible = True
 
-	gtk.gdk.threads_init()
+		self.init_gui()
+		self.connect_signals()
+		
+		self.action_toggle = ('ToggleTabSearch', gtk.STOCK_INFO, _('Toggle tab search pane'),
+				None, _('Change the visibility of the tab search pane'),
+				self.toggle_visibility, True)
+		self.action_group = gtk.ActionGroup('TabSearchActions')
+		self.action_group.add_toggle_actions([self.action_toggle])
+		
+		# since the visibility toggle is per default set to TRUE,
+		# click it once, if visibility in gconf is set to false!
+		if gconf.client_get_default().get_bool(self.gconf_keys['visible']) == False:
+			action = self.action_group.get_action('ToggleTabSearch')
+			action.activate();
+		
+		uim = self.shell.get_ui_manager()
+		uim.insert_action_group (self.action_group, 0)
+		self.ui_id = uim.add_ui_from_string(tab_search_ui)
+		uim.ensure_update()
 
-        self.basepath = 'file://' + os.path.split(plugin.find_file('TabSearch.py'))[0]
-        self.visible = True
 
-        self.init_gui()
-        self.connect_signals()
+	def init_gui(self) :
+		print "TabSearch->init_gui"
+		self.vbox = gtk.VBox()
+		
+		self.toolbar = gtk.Toolbar()
+		self.toolitemSave = gtk.ToolButton(None, 'Save')
+		self.toolitemSave.set_stock_id(gtk.STOCK_SAVE)
+		self.toolitemSave.connect('clicked', self.save_tabs)
+		self.toolitemSave.set_sensitive(False)
+		self.toolbar.add(self.toolitemSave)
+		self.toolitemEdit = gtk.ToolButton(None, 'Edit')
+		self.toolitemEdit.set_stock_id(gtk.STOCK_EDIT)
+		self.toolitemEdit.connect('clicked', self.edit_tabs)
+		self.toolitemEdit.set_sensitive(False)
+		self.toolbar.add(self.toolitemEdit)
+		self.toolitemLoad = gtk.ToolButton(None, 'Load From Web')
+		self.toolitemLoad.set_stock_id(gtk.STOCK_REFRESH)
+		self.toolitemLoad.connect('clicked', self.load_tabs_from_web)
+		self.toolitemLoad.set_sensitive(False)
+		self.toolbar.add(self.toolitemLoad)
+		self.vbox.pack_start(self.toolbar, expand = False)
+		
+		self.notebook = gtk.Notebook()
+		self.notebook.set_scrollable(True)
+		
+		self.vbox.set_size_request(650, -1)
+		self.shell.add_widget(self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR, expand=True)
+		self.vbox.show_all()
 
-        self.action = ('ToggleTabSearch', gtk.STOCK_INFO, _('Toggle tab search pane'),
-                None, _('Change the visibility of the tab search pane'),
-                self.toggle_visibility, True)
-        self.action_group = gtk.ActionGroup('TabSearchActions')
-        self.action_group.add_toggle_actions([self.action])
-        uim = self.shell.get_ui_manager()
-        uim.insert_action_group (self.action_group, 0)
-        self.ui_id = uim.add_ui_from_string(tab_search_ui)
-        uim.ensure_update()
+	# set the callback function 'playing_changed_cb'
+	def connect_signals(self):
+		self.player_cb_ids = (self.sp.connect('playing-changed', self.playing_changed_cb))
 
-    def connect_signals(self) :
-        self.player_cb_ids = ( self.sp.connect ('playing-changed', self.playing_changed_cb))
-
-    def get_sites (self):
-	try:
-		sites = gconf.client_get_default().get_list(self.gconf_keys['sites'], gconf.VALUE_STRING)
-		if sites is None:
+	# which sites did the user check in the configuration dialog?
+	def get_sites(self):
+		try:
+			sites = gconf.client_get_default().get_list(self.gconf_keys['sites'], gconf.VALUE_STRING)
+			if sites is None:
+				sites = []
+		except:
+			print "Error: can't load the sites from configuration"
 			sites = []
-	except gobject.GError, e:
-		print e
-		sites = []
+		print "tabs sites: " + str(sites)
+		return sites
+		
+	# which folder did the user specify in the configuration dialog?
+	# TODO: what's happening when the path is not valid?
+	def get_tabfolder(self):
+		try:
+			folder = gconf.client_get_default().get_string(self.gconf_keys['folder'])
+		except:
+			print "Error: can't load the tab folder path from configuration"
+		print "tabs folder: " + folder
+		return folder
 
-	#print "tabs sites: " + str (sites)
-	return (sites)
+	def load_tabs_from_web(self, action):
+		return self.load_tabs('web')
+
+	# callback function that is triggered whenever there's 
+	# a change in played song title
+	def playing_changed_cb (self, playing, user_data):
+		print "There's been a change in playback ..."
+		self.info_tab.set_content('Infos\n=====')
+		return self.load_tabs('hdd')
+
+	def load_tabs(self, source):
+		if self.visible is False:
+			print "no visibility -> no need to look for tabs"
+			return
+		
+		playing_entry = None
+		if self.sp:
+			playing_entry = self.sp.get_playing_entry()
+		if playing_entry is None :
+			return
+
+		playing_artist = self.db.entry_get (playing_entry, rhythmdb.PROP_ARTIST)
+		playing_title = self.db.entry_get (playing_entry, rhythmdb.PROP_TITLE)
+		
+		print "looking for '" + playing_artist + "' and the song '" + playing_title + "'"
+		
+		# passing the song info to the tab site parser
+		# without removing the é and è from it.
+		playing_artist = remove_accents(playing_artist)
+		playing_title = remove_accents(playing_title)
+
+		if playing_artist.upper() == "UNKNOWN":
+			playing_artist = ""
+			
+		# resetting notebook
+		if self.notebook in self.vbox.get_children():
+			self.vbox.remove(self.notebook)
+		self.vbox.show_all()
+		self.notebook = None
+		self.notebook = gtk.Notebook()
+		self.notebook.set_scrollable(True)
+		self.notebook.connect('switch-page', self.update_toolbar)
+
+		self.vbox.pack_start(self.notebook, expand = True)
+		self.vbox.show_all()
+		
+		# Remove tabs from notebook
+		self.tab_list = []
+		self.info_tab.set_meta('artist', playing_artist)
+		self.info_tab.set_meta('title', playing_title)
+		
+		if source == 'hdd':
+			self.update_info_tab("\nchecking hdd for '" + playing_artist + "' and the song '" + playing_title + "'")
+			self.open_tabs_from_hdd(playing_artist, playing_title)
+		if source == 'web':
+			self.update_info_tab("\nchecking web for '" + playing_artist + "' and the song '" + playing_title + "'")
+			if not(playing_artist == ""):
+				self.sites = self.get_sites()
+				for s in self.sites:
+					site_id = s
+					if s == 'gt':
+						gt = GuitareTabParser(self.add_tab_to_notebook, self.update_info_tab)
+						gt.tabs_finder(playing_artist, playing_title)
+					elif s == 'ug':
+						ug = UltimateGuitarParser(self.add_tab_to_notebook, self.update_info_tab)
+						ug.tabs_finder(playing_artist, playing_title)
+					elif s == 'az':
+						az = AZChordsParser(self.add_tab_to_notebook, self.update_info_tab)
+						az.tabs_finder(playing_artist, playing_title)
+					elif s == 'lc':
+						lc = LacuerdaParser(self.add_tab_to_notebook, self.update_info_tab)
+						lc.tabs_finder(playing_artist, playing_title)
+
+	def deactivate (self, shell):
+		print "Plugin deactivated."
+		self.shell = None
+		self.sp = None
+		self.db = None
+		self.plugin = None
+		shell.remove_widget(self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR)
+		uim = shell.get_ui_manager()
+		uim.remove_ui(self.ui_id)
+		uim.remove_action_group(self.action_group)
+
+	# toggles the visibility of the tab widget
+	def toggle_visibility(self, action):
+		print "Visibility set to " + str(not self.visible)
+		if not self.visible:
+			self.shell.add_widget(self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR, expand=True)
+			self.visible = True
+			self.load_tabs('hdd')
+		else:
+			self.shell.remove_widget(self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR)
+			self.visible = False
+		gconf.client_get_default().set_bool(self.gconf_keys['visible'], self.visible)
+
+	def edit_tabs(self, action):
+		self.toolitemEdit.set_sensitive(False)
+		self.get_current_tab().set_editable(True)
+		self.toolitemSave.set_sensitive(True)
+
+	# (de)activates the buttons on the toolbar depending on whether
+	# they're useful in the current situation
+	def update_toolbar(self, notebook, page, page_num):
+		self.toolitemEdit.set_sensitive(False)
+		self.toolitemSave.set_sensitive(False)
+		self.toolitemLoad.set_sensitive(False)
+		if page_num == 0:
+			self.toolitemLoad.set_sensitive(True)
+		if page_num > 0:
+			self.toolitemEdit.set_sensitive(True)
+
+	# returns the currently selected tab content
+	def get_current_tab(self):
+		currentTab = self.notebook.get_current_page()
+		return self.notebook.get_nth_page(currentTab).get_child()
+		
+	# returns the currently selected tab content
+	def get_current_tab_title(self):
+		currentTab = self.notebook.get_current_page()
+		currentTab = self.notebook.get_nth_page(currentTab)
+		return self.notebook.get_tab_label(currentTab).get_text()
+
+	# copies currently selected tabs to the hard disk
+	def save_tabs(self, action):
+		print 'saving tabs to hdd ...'
+		self.toolitemSave.set_sensitive(False)
+		self.toolitemEdit.set_sensitive(True)
+		self.get_current_tab().set_editable(False)
+		
+		textbuffer = ""
+		try:
+			textbuffer = self.get_current_tab().get_buffer()
+			textbuffer = textbuffer.get_text(textbuffer.get_start_iter() , textbuffer.get_end_iter())
+		except:
+			print 'Error: can\'t read current\'s tabs content'
+		
+		if textbuffer is None:
+			print 'Error: loading current tabs failed'
+			return
+		
+		directory = self.get_tabfolder() + '/' + self.info_tab.meta['artist'] + '/'
+		
+		try:
+			os.makedirs(directory)
+		except os.error:
+			print 'Notice: directory\'s already existing'
+		
+		filename = directory + self.info_tab.meta['title'] + '.txt'
+		
+		try:
+			file = open(filename, 'w')
+		except:
+			print "Error: can't open file"
+			return
+		
+		file.write(textbuffer)
+		file.close()
+		print "-> saved successfully to hdd"
+		self.load_tabs('hdd')
 
 
-    def remove_html_tags(self, data):
-        p = re.compile(r'<.*?>')
-        return p.sub('', data)
+	def open_tabs_from_hdd(self, artist, title):
+		filename = self.get_tabfolder() + '/' + artist + '/' + title + '.txt'
+		print filename
+		try:
+			loader = rb.Loader()
+			loader.get_url(filename, self.add_tab_to_notebook, {'source': 'hdd', 'artist': artist, 'title': title})
+		except Exception, e:
+			print e
 
-    def remove_par(self, data):
-        p = re.compile(r'(.*?)')
-        return p.sub('', data)
+	def add_tab_to_notebook(self, data, params):
+		#print data
+		#print "add_tab_to_notebook !!!!"
+		doAutoLookup = False
+		if data is None:
+			data = 'Illegal source selected...this shouldn\'t happen! Please contact plugin author!';
+			if params['source'] == 'hdd':
+				if not gconf.client_get_default().get_bool(self.gconf_keys['preventAutoWebLookup']):
+					doAutoLookup = True
+				data = "\t   No tabs found on your hard disk.\n\t   Try checking the tab sites on the internet\n\t   by clicking on the 'load from web' button above."
+			else:
+				data = "you should not see this, check source code!"
+				#data = "\t   Sorry! \""+title+"\" not found on selected tab sites.\n\t   Try checking other tab sites on the internet\n\t   by selecting other tab sites in the configuration dialog."
+			self.update_info_tab('\t-> Nothing found!\n' + data)
+		else:
+			# inform user on info tab about success at fetching data
+			self.update_info_tab('\t-> tabs found on ' + params['source'] + ' for \'' + params['artist'] + '\' - \'' + params['title'] + '\'.')
+			tab = Tab('#' + str(len(self.notebook.get_children())) + ' ' + params['source'], data)
+			tab.set_meta('artist', params['artist'])
+			tab.set_meta('title', params['title'])
+			self.tab_list.append(tab)
+			self.update_notebook(params['source'], params['artist'], params['title'])
+		if doAutoLookup:
+			self.load_tabs('web')
 
+	def update_info_tab(self, new_content):
+		self.info_tab.add_content(new_content)
+		
+		if len(self.notebook.get_children()) == 0:
+			# create info tab for the first time
+			scroll = self.create_page(self.info_tab.content)
+			self.notebook.prepend_page(scroll, gtk.Label(self.info_tab.label))
+		else:
+			# update existing info tab
+			infoTab = self.notebook.get_nth_page(0).get_child()
+			textbuffer = infoTab.get_buffer()
+			textbuffer.set_text(self.info_tab.content)
+		self.notebook.show()
+		self.vbox.show_all()
 
-    def playing_changed_cb (self, playing, user_data) :
-        playing_entry = None
-        if self.sp:
-            playing_entry = self.sp.get_playing_entry ()
-        if playing_entry is None :
-            return
-
-        playing_artist = self.db.entry_get (playing_entry, rhythmdb.PROP_ARTIST)
-        playing_title = self.db.entry_get (playing_entry, rhythmdb.PROP_TITLE)
-
-        playing_artist = self.remove_accents(playing_artist)
-        playing_title = self.remove_accents(playing_title)   
-
-        if playing_artist.upper() == "UNKNOWN":
-            playing_artist = ""
-        if not(playing_artist == ""):     
-	    self.vbox.remove(self.notebook)
-	    self.vbox.show_all()
-	    self.notebook = None
-	    self.notebook = gtk.Notebook()
-	    self.notebook.set_scrollable(True)
-
-            self.vbox.pack_start(self.notebook, expand = True)        
-	    self.vbox.show_all()
-
-	    self.sites = self.get_sites()
-	    self.tab_list = []		
-	
-	    gtk.gdk.threads_enter()
-	    for s in self.sites:
-		site_id = s
-		if s == 'gt':
-			gt = GuitareTabParser(playing_artist, playing_title, self.tab_list)
-		elif s == 'ug':
-			ug = UltimateGuitarParser(playing_artist, playing_title, self.tab_list)
-		elif s == 'az':
-			az = AZChordsParser(playing_artist, playing_title, self.tab_list)
-
-	    fail=0
-            for i in self.tab_list:
-		if i.label == 'Not Found':
-			fail += 1		
-
-	    if fail == len(self.tab_list):
-		tabWebview = webkit.WebView()
+	def update_notebook(self, source, artist, title):
+		""" Update notebook """
 		if len(self.tab_list) == 0:
-			tabWebview.load_string ("No tab site selected!\nGo to Plugin->Tab Plugin and click on the \"Configure\" button.", 'text/plain', 'utf-8', self.basepath)
-		else :
-			tabWebview.load_string ("Sorry! \""+playing_title+"\" not found...", 'text/plain', 'utf-8', self.basepath)
+			print 'no tabs in tab_list !'
+		else:
+			# data tabs
+			for tab in self.tab_list:
+				if not(tab.label == "Not Found"): 
+					scroll = self.create_page(tab.content)
+					self.notebook.append_page(scroll, gtk.Label(tab.label))
+		self.tab_list = []
+		self.notebook.show()
+		self.vbox.show_all()
+
+	def create_page(self, text):
+		fontdesc = pango.FontDescription("Courier New 8")
+		textbuffer = gtk.TextBuffer(None)
+		textbuffer.set_text(text)
+		textview = gtk.TextView(textbuffer)
+		textview.set_editable(False)
+		textview.modify_font(fontdesc)
 		scroll = gtk.ScrolledWindow()
 		scroll.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 		scroll.set_shadow_type(gtk.SHADOW_IN)
-		scroll.add(tabWebview) 
+		scroll.add(textview) 
 		scroll.show()
-		self.notebook.append_page(scroll, gtk.Label("Tab Not Found!"))
-	    else:
-	        for l in self.tab_list:
-			if not(l.label == "Not Found"): 
-				tabWebview = webkit.WebView()
-				tabWebview.load_string (l.content, 'text/plain', 'utf-8', self.basepath)
-				scroll = gtk.ScrolledWindow()
-				scroll.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-				scroll.set_shadow_type(gtk.SHADOW_IN)
-				scroll.add(tabWebview) 
-				scroll.show()
-				self.notebook.append_page(scroll, gtk.Label(l.label))	
-
-
-	    self.notebook.show()
- 	    self.vbox.show_all()
-  	    gtk.gdk.threads_leave()
-
-
-    def deactivate (self, shell) :
-        self.shell = None
-        self.sp = None
-        self.db = None
-        self.plugin = None
-        shell.remove_widget (self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR)
-        uim = shell.get_ui_manager ()
-        uim.remove_ui (self.ui_id)
-        uim.remove_action_group (self.action_group)
-
-    def toggle_visibility (self, action) :
-        if not self.visible :
-            self.shell.add_widget (self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR, expand=True)
-            self.visible = True
-        else :
-            self.shell.remove_widget (self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR)
-            self.visible = False
-
-    def remove_accents(self, str) :
-	nkfd_form = unicodedata.normalize('NFKD', unicode(str))
-	only_ascii = nkfd_form.encode('ASCII', 'ignore')
-	return only_ascii
-
-    def init_gui(self) :	
-        self.vbox = gtk.VBox()
-	self.notebook = gtk.Notebook()
-	self.notebook.set_scrollable(True)
-       
-        self.vbox.set_size_request(650, -1)
-        self.shell.add_widget (self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR, expand=True)
-	self.vbox.show_all()
-
-
-
+		return scroll

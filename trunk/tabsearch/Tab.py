@@ -20,7 +20,19 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 
+# This class represents one tab in the tab view
 class Tab (object):
 	def __init__(self, label, content):
 		self.label = label
 		self.content = content
+		self.meta = {}
+
+
+	def add_content(self,content):
+		self.content += "\n" + content
+
+	def set_content(self,content):
+		self.content = content
+		
+	def set_meta(self, meta_key, meta_value):
+		self.meta[meta_key] = meta_value
