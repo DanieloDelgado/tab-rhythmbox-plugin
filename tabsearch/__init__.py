@@ -26,23 +26,29 @@ import rb, rhythmdb
 import TabSearch as tp
 from TabConfigureDialog import TabConfigureDialog
 
-gconf_keys = {	'sites' : '/apps/rhythmbox/plugins/tabsearch/sites'	}
+gconf_keys = {
+	'sites': '/apps/rhythmbox/plugins/tabsearch/sites',
+	'folder': '/apps/rhythmbox/plugins/tabsearch/folder',
+	'visible': '/apps/rhythmbox/plugins/tabsearch/visible',
+	'preventAutoWebLookup': '/apps/rhythmbox/plugins/tabsearch/preventAutoWebLookup'
+}
 
+# this class represents the tab search plugin
 class TabSearchPlugin(rb.Plugin):
-    def __init__ (self):
-        rb.Plugin.__init__ (self)
+	def __init__ (self):
+		rb.Plugin.__init__ (self)
 
-    def activate (self, shell):
-        self.context_view = tp.TabSearch (shell, self, gconf_keys)
+	def activate (self, shell):
+		self.context_view = tp.TabSearch (shell, self, gconf_keys)
 
-    def deactivate(self, shell):
-        self.context_view.deactivate(shell)
-        del self.context_view
+	def deactivate(self, shell):
+		self.context_view.deactivate(shell)
+		del self.context_view
 
-    def create_configure_dialog(self, dialog=None):
-	if not dialog:
-		builder_file = self.find_file("tab-prefs.ui")
-		dialog = TabConfigureDialog (builder_file, gconf_keys).get_dialog()
-	dialog.present()
-	return dialog
-	
+	def create_configure_dialog(self, dialog=None):
+		if not dialog:
+			builder_file = self.find_file("tab-prefs.ui")
+			dialog = TabConfigureDialog (builder_file, gconf_keys).get_dialog()
+		dialog.present()
+		return dialog
+

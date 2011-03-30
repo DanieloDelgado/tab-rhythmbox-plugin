@@ -22,8 +22,9 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 
 tab_sites = [
-	{ 'id':	'gt',	'name': _("Guitare Tab (guitaretab.com)")		},
-	{ 'id':	'az',	'name': _("AZChords (azchords.com)")		},
-	{ 'id':	'ug',	'name': _("Ultimate Guitar (ultimate-guitar.com)")	}
+	{ 'id':	'gt',	'name': _("Guitare Tab (guitaretab.com)")},
+	{ 'id':	'az',	'name': _("AZChords (azchords.com)")},
+	{ 'id':	'ug',	'name': _("Ultimate Guitar (ultimate-guitar.com)")},
+	{ 'id':	'lc',	'name': _("Lacuerda (lacuerda.net)")}
 ]
 
