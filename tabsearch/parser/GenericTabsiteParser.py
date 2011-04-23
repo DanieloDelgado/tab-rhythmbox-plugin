@@ -157,7 +157,10 @@ class GenericTabsiteParser(object):
 			# to "utf-8" since the internal processing of tabs works exclusivly
 			# with this encoding.
 			# have a look at the function process_tab()
-			text = etree.tostring(preTags[0], encoding='utf-8')
+			text = ""
+			for i in range(0, len(preTags)):
+				text += etree.tostring(preTags[i], encoding='utf-8')
+
 			text = self.process_tab(text)
 			if len(preTags) > 1:
 				text = "More than one <pre> found.\n\n" + text
