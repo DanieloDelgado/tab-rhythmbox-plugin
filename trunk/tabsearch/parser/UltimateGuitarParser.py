@@ -71,3 +71,14 @@ class UltimateGuitarParser (GenericTabsiteParser):
 			type = a.getparent().getnext().getnext().text_content()
 			title = a.text_content()
 			self.fetch_single_tab(link, type, title)
+
+	def get_tab_expr(self):
+		"""	returns an expression that graps a <pre>-tag whose parent 
+			is NOT <div class="cn"> which is the new ugly disclamer """
+		# the original one:
+		#	return ".//*/pre"
+		# the one philipp would like to use but doesnt work for some reason ;-)
+		#	return ".//*/pre/..[not(@class='dn')]"
+		
+		# the one that works: 
+		return ".//*/pre/parent::*[not(@class='dn')]/pre"
