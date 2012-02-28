@@ -1,0 +1,25 @@
+<schemalist>
+  <schema id="org.gnome.rhythmbox.plugins.tabsearch" path="/org/gnome/rhythmbox/plugins/tabsearch/">
+    <key name="sites" type="as">
+      <default>['']</default>	<!-- do we have any that work? -->
+      <summary>The list of sites to search for tabs</summary>
+      <description>The list of sites to search for tabs</description>
+    </key>
+    <!-- don't like this at all -->
+    <key name="folder" type="s">
+      <default>''</default>
+      <summary>Song tabs cache location</summary>
+      <description>The location of a folder to store downloaded song tabs</description>
+    </key>
+    <key name="visible" type="b">
+	<default>false</default>
+	<summary>Anzeige</summary>
+	<description>...</description>
+    </key>
+    <key name="preventautoweblookup" type="b">
+	<default>false</default>
+	<summary>Prevent automatic web lookup</summary>
+	<description>...</description>
+    </key>
+  </schema>
+</schemalist>
