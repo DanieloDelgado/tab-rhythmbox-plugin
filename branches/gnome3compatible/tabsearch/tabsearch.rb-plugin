@@ -1,0 +1,9 @@
+[RB Plugin]
+Loader=python
+Module=tabsearch
+IAge=1
+Name=Tab Plugin
+Description=Search guitar tabs using web.\nVersion 0.4
+Authors=Giulio Massaccesi <giulio.massaccesi@gmail.com>\nPhilipp Kitzberger <philipp@kitze.net>
+Copyright=Copyright © 2010-2011 Giulio Massaccesi
+Website=http://code.google.com/p/tab-rhythmbox-plugin/
