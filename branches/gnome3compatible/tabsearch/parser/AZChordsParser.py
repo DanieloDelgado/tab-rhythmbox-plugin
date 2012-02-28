@@ -22,12 +22,12 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 
-import rb
 from Tab import Tab
 from lxml.html import fromstring
 from GenericTabsiteParser import GenericTabsiteParser
 from Helper import remove_accents
-
+from gi._glib import GError
+from gi.repository import Gio
 
 class AZChordsParser (GenericTabsiteParser):
 	def __init__(self, callback_content, callback_info):
@@ -61,23 +61,32 @@ class AZChordsParser (GenericTabsiteParser):
 		# url for overview page that lists all artists with that first letter
 		url = "http://www.azchords.com/"+first_letter+".html"
 
-		loader = rb.Loader()
-		loader.get_url(url, self.generate_url_to_overview_AZ, artist, url)
+		self.file_res = Gio.File.new_for_uri(url)
+		self.file_res.load_contents_async(None, self.generate_url_to_overview_AZ, {'artist': artist, 'url': url})
 
-	def generate_url_to_overview_AZ(self, html, artist, url):
+
+	def generate_url_to_overview_AZ(self, gdaemonfile, result, params):
+		try:
+			result = self.file_res.load_contents_finish(result)
+		except GError:
+			print "Error: can't open uri: " + params['url']
+			return
+		successful = result[0]
+		html = result[1]
+
 		if html is None:
 			print 'Error: html is None'
 			self.callback_info(
 				'\t-> No index page found on '+self.website_title+' ('+self.website_short+')!\n'
 				'\t   Maybe this is a bug in this plugin. Please have a look on the overview page\n' + 
 				'\t   and report at http://code.google.com/p/tab-rhythmbox-plugin/ if the artist\n' + 
-				'\t   of this song is listed on this page:\n\t   ' + url)
+				'\t   of this song is listed on this page:\n\t   ' + params['url'])
 			return
 		
 		searchTree = fromstring(html)
 		
 		# get the url for artists overview page
-		expr = ".//*/a[contains(., \""+artist.title()+"\") ]"
+		expr = ".//*/a[contains(., \""+params['artist'].title()+"\") ]"
 		print "\t-> using expression: " + expr
 		tree = searchTree.xpath(expr)
 		
@@ -90,14 +99,15 @@ class AZChordsParser (GenericTabsiteParser):
 					'\t-> No overview page found on '+self.website_title+' ('+self.website_short+')!\n'
 					'\t   Maybe this is a bug in this plugin. Please have a look on the index page\n' + 
 					'\t   and report at http://code.google.com/p/tab-rhythmbox-plugin/ if the artist\n' + 
-					'\t   of this song is linked to on this page:\n\t   ' + url)
+					'\t   of this song is linked to on this page:\n\t   ' + params['url'])
 
 	def fetch_tabs(self, tree):
 		first_letter = self.prepare_artist_for_url()[0]
 		
 		tabs = []
 		for a in tree:
-			link = "http://www.azchords.com/"+first_letter+"/"+a.get('href')
+#			link = "http://www.azchords.com/"+first_letter+"/"+a.get('href')
+			link = "http://www.azchords.com/"+a.get('href')
 			title = a.text_content()
 			# TODO: grapping the real type
 			type = ''
