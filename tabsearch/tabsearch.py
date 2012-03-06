@@ -66,7 +66,7 @@ class TabSearch(GObject.Object):
 	def __init__(self, shell, plugin):
 		GObject.Object.__init__(self)
 		self.shell = shell
-		self.sp = shell.get_player()
+		self.sp = shell.get_property('shell-player')
 		self.db = shell.get_property('db')
 		self.plugin = plugin
 
@@ -92,7 +92,7 @@ class TabSearch(GObject.Object):
 			action = self.action_group.get_action('ToggleTabSearch')
 			action.activate();
 		
-		uim = self.shell.get_ui_manager()
+		uim = self.sp.get_property('ui-manager')
 		uim.insert_action_group (self.action_group, 0)
 		self.ui_id = uim.add_ui_from_string(tab_search_ui)
 		uim.ensure_update()
