@@ -25,6 +25,7 @@ tab_sites = [
 	{ 'id':	'gt',	'name': _("Guitare Tab (guitaretab.com)")},
 	{ 'id':	'az',	'name': _("AZChords (azchords.com)")},
 	{ 'id':	'ug',	'name': _("Ultimate Guitar (ultimate-guitar.com)")},
+	{ 'id':	'ec',	'name': _("E-Chords (e-chords.com)")},
 	{ 'id':	'lc',	'name': _("Lacuerda (lacuerda.net)")}
 ]
 
