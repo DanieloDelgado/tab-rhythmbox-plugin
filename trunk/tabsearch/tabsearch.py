@@ -24,14 +24,11 @@
 
 
 import os
-import rb, rhythmdb
-import gtk, gobject
-import gconf
-import webkit
-import pango
+from gi.repository import GObject, Gtk, Gdk, Pango, Gio, Peas, PeasGtk
+from gi.repository import RB
+from gi.repository import WebKit
+from gi._glib import GError
 import re
-#from lxml.html import fromstring
-#from lxml import etree
 from parser.GuitareTabParser import GuitareTabParser
 from parser.UltimateGuitarParser import UltimateGuitarParser
 from parser.AZChordsParser import AZChordsParser
@@ -48,16 +45,32 @@ tab_search_ui = """
 </ui>
 """
 
-class TabSearch(gobject.GObject):
-	def __init__(self, shell, plugin, gconf_keys):
-		gobject.GObject.__init__(self)
+from TabConfigureDialog import TabConfigureDialog
+
+# this class represents the tab search plugin
+class TabSearchPlugin(GObject.Object, Peas.Activatable, PeasGtk.Configurable):
+	__gtype_name__ = 'TabSearchPlugin'
+	object = GObject.property(type=GObject.Object)
+
+	def __init__ (self):
+		GObject.Object.__init__ (self)
+
+	def do_activate (self):
+		self.context_view = TabSearch (self.object, self)
+
+	def do_deactivate(self):
+		self.context_view.deactivate(self.object)
+		del self.context_view
+
+class TabSearch(GObject.Object):
+	def __init__(self, shell, plugin):
+		GObject.Object.__init__(self)
 		self.shell = shell
-		self.sp = shell.get_player()
+		self.sp = shell.get_property('shell-player')
 		self.db = shell.get_property('db')
 		self.plugin = plugin
 
-		self.gconf = gconf.client_get_default()
-		self.gconf_keys = gconf_keys
+		self.settings = Gio.Settings("org.gnome.rhythmbox.plugins.tabsearch")
 		self.sites = self.get_sites()
 		self.tab_list = []
 		self.info_tab = Tab('Info', 'Infos\n=====')
@@ -67,19 +80,19 @@ class TabSearch(gobject.GObject):
 		self.init_gui()
 		self.connect_signals()
 		
-		self.action_toggle = ('ToggleTabSearch', gtk.STOCK_INFO, _('Toggle tab search pane'),
+		self.action_toggle = ('ToggleTabSearch', Gtk.STOCK_INFO, _('TabSearch'),
 				None, _('Change the visibility of the tab search pane'),
 				self.toggle_visibility, True)
-		self.action_group = gtk.ActionGroup('TabSearchActions')
+		self.action_group = Gtk.ActionGroup('TabSearchActions')
 		self.action_group.add_toggle_actions([self.action_toggle])
 		
 		# since the visibility toggle is per default set to TRUE,
 		# click it once, if visibility in gconf is set to false!
-		if gconf.client_get_default().get_bool(self.gconf_keys['visible']) == False:
+		if self.settings.get_boolean('visible') == False:
 			action = self.action_group.get_action('ToggleTabSearch')
 			action.activate();
 		
-		uim = self.shell.get_ui_manager()
+		uim = self.sp.get_property('ui-manager')
 		uim.insert_action_group (self.action_group, 0)
 		self.ui_id = uim.add_ui_from_string(tab_search_ui)
 		uim.ensure_update()
@@ -87,31 +100,34 @@ class TabSearch(gobject.GObject):
 
 	def init_gui(self) :
 		print "TabSearch->init_gui"
-		self.vbox = gtk.VBox()
+		self.vbox = Gtk.VBox()
 		
-		self.toolbar = gtk.Toolbar()
-		self.toolitemSave = gtk.ToolButton(None, 'Save')
-		self.toolitemSave.set_stock_id(gtk.STOCK_SAVE)
+		self.toolbar = Gtk.Toolbar()
+		self.toolitemSave = Gtk.ToolButton()
+		self.toolitemSave.set_label('Save')
+		self.toolitemSave.set_stock_id(Gtk.STOCK_SAVE)
 		self.toolitemSave.connect('clicked', self.save_tabs)
 		self.toolitemSave.set_sensitive(False)
 		self.toolbar.add(self.toolitemSave)
-		self.toolitemEdit = gtk.ToolButton(None, 'Edit')
-		self.toolitemEdit.set_stock_id(gtk.STOCK_EDIT)
+		self.toolitemEdit = Gtk.ToolButton()
+		self.toolitemEdit.set_label('Edit')
+		self.toolitemEdit.set_stock_id(Gtk.STOCK_EDIT)
 		self.toolitemEdit.connect('clicked', self.edit_tabs)
 		self.toolitemEdit.set_sensitive(False)
 		self.toolbar.add(self.toolitemEdit)
-		self.toolitemLoad = gtk.ToolButton(None, 'Load From Web')
-		self.toolitemLoad.set_stock_id(gtk.STOCK_REFRESH)
+		self.toolitemLoad = Gtk.ToolButton()
+		self.toolitemLoad.set_label('Load From Web')
+		self.toolitemLoad.set_stock_id(Gtk.STOCK_REFRESH)
 		self.toolitemLoad.connect('clicked', self.load_tabs_from_web)
 		self.toolitemLoad.set_sensitive(False)
 		self.toolbar.add(self.toolitemLoad)
-		self.vbox.pack_start(self.toolbar, expand = False)
+		self.vbox.pack_start(self.toolbar, expand = False, fill = True, padding = 0)
 		
-		self.notebook = gtk.Notebook()
+		self.notebook = Gtk.Notebook()
 		self.notebook.set_scrollable(True)
 		
-		self.vbox.set_size_request(650, -1)
-		self.shell.add_widget(self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR, expand=True)
+		self.vbox.set_size_request(250, -1)
+		self.shell.add_widget(self.vbox, RB.ShellUILocation.RIGHT_SIDEBAR, expand=True, fill=True)
 		self.vbox.show_all()
 
 	# set the callback function 'playing_changed_cb'
@@ -121,7 +137,7 @@ class TabSearch(gobject.GObject):
 	# which sites did the user check in the configuration dialog?
 	def get_sites(self):
 		try:
-			sites = gconf.client_get_default().get_list(self.gconf_keys['sites'], gconf.VALUE_STRING)
+			sites = self.settings['sites']
 			if sites is None:
 				sites = []
 		except:
@@ -134,7 +150,8 @@ class TabSearch(gobject.GObject):
 	# TODO: what's happening when the path is not valid?
 	def get_tabfolder(self):
 		try:
-			folder = gconf.client_get_default().get_string(self.gconf_keys['folder'])
+#			folder = gconf.client_get_default().get_string(self.gconf_keys['folder'])
+			folder = self.settings.get_string('folder')
 		except:
 			print "Error: can't load the tab folder path from configuration"
 		print "tabs folder: " + folder
@@ -161,8 +178,10 @@ class TabSearch(gobject.GObject):
 		if playing_entry is None :
 			return
 
-		playing_artist = self.db.entry_get (playing_entry, rhythmdb.PROP_ARTIST)
-		playing_title = self.db.entry_get (playing_entry, rhythmdb.PROP_TITLE)
+#		playing_artist = self.db.entry_get (playing_entry, rhythmdb.PROP_ARTIST)
+#		playing_title = self.db.entry_get (playing_entry, rhythmdb.PROP_TITLE)
+		playing_artist = playing_entry.get_string(RB.RhythmDBPropType.ARTIST)
+		playing_title = playing_entry.get_string(RB.RhythmDBPropType.TITLE)
 		
 		print "looking for '" + playing_artist + "' and the song '" + playing_title + "'"
 		
@@ -179,11 +198,11 @@ class TabSearch(gobject.GObject):
 			self.vbox.remove(self.notebook)
 		self.vbox.show_all()
 		self.notebook = None
-		self.notebook = gtk.Notebook()
+		self.notebook = Gtk.Notebook()
 		self.notebook.set_scrollable(True)
 		self.notebook.connect('switch-page', self.update_toolbar)
 
-		self.vbox.pack_start(self.notebook, expand = True)
+		self.vbox.pack_start(self.notebook, expand = True, fill = True, padding=0)
 		self.vbox.show_all()
 		
 		# Remove tabs from notebook
@@ -219,7 +238,7 @@ class TabSearch(gobject.GObject):
 		self.sp = None
 		self.db = None
 		self.plugin = None
-		shell.remove_widget(self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR)
+		shell.remove_widget(self.vbox, RB.ShellUILocation.RIGHT_SIDEBAR)
 		uim = shell.get_ui_manager()
 		uim.remove_ui(self.ui_id)
 		uim.remove_action_group(self.action_group)
@@ -228,13 +247,14 @@ class TabSearch(gobject.GObject):
 	def toggle_visibility(self, action):
 		print "Visibility set to " + str(not self.visible)
 		if not self.visible:
-			self.shell.add_widget(self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR, expand=True)
+			self.shell.add_widget(self.vbox, RB.ShellUILocation.RIGHT_SIDEBAR, expand=True, fill=True)
 			self.visible = True
 			self.load_tabs('hdd')
 		else:
-			self.shell.remove_widget(self.vbox, rb.SHELL_UI_LOCATION_RIGHT_SIDEBAR)
+			self.shell.remove_widget(self.vbox, RB.ShellUILocation.RIGHT_SIDEBAR)
 			self.visible = False
-		gconf.client_get_default().set_bool(self.gconf_keys['visible'], self.visible)
+#		gconf.client_get_default().set_bool(self.gconf_keys['visible'], self.visible)
+		self.settings.set_boolean('visible', self.visible)
 
 	def edit_tabs(self, action):
 		self.toolitemEdit.set_sensitive(False)
@@ -273,7 +293,7 @@ class TabSearch(gobject.GObject):
 		textbuffer = ""
 		try:
 			textbuffer = self.get_current_tab().get_buffer()
-			textbuffer = textbuffer.get_text(textbuffer.get_start_iter() , textbuffer.get_end_iter())
+			textbuffer = textbuffer.get_text(textbuffer.get_start_iter() , textbuffer.get_end_iter(), 0)
 		except:
 			print 'Error: can\'t read current\'s tabs content'
 		
@@ -305,11 +325,19 @@ class TabSearch(gobject.GObject):
 	def open_tabs_from_hdd(self, artist, title):
 		filename = self.get_tabfolder() + '/' + artist + '/' + title + '.txt'
 		print filename
+		self.file_res = Gio.File.new_for_path(filename)
+		self.file_res.load_contents_async(None, self.open_tabs_from_hdd_cb, {'source': 'hdd', 'artist': artist, 'title': title})
+
+	def open_tabs_from_hdd_cb(self, gdaemonfile, result, params):
 		try:
-			loader = rb.Loader()
-			loader.get_url(filename, self.add_tab_to_notebook, {'source': 'hdd', 'artist': artist, 'title': title})
-		except Exception, e:
-			print e
+			result = self.file_res.load_contents_finish(result)
+		except GError:
+			print "Error: can't open file, maybe it's not there at all..."
+			return
+		successful = result[0]
+		data = result[1]
+		
+		self.add_tab_to_notebook(data, params)
 
 	def add_tab_to_notebook(self, data, params):
 		#print data
@@ -318,7 +346,7 @@ class TabSearch(gobject.GObject):
 		if data is None:
 			data = 'Illegal source selected...this shouldn\'t happen! Please contact plugin author!';
 			if params['source'] == 'hdd':
-				if not gconf.client_get_default().get_bool(self.gconf_keys['preventAutoWebLookup']):
+				if not self.settings.get_boolean('preventautoweblookup'):
 					doAutoLookup = True
 				data = "\t   No tabs found on your hard disk.\n\t   Try checking the tab sites on the internet\n\t   by clicking on the 'load from web' button above."
 			else:
@@ -342,7 +370,7 @@ class TabSearch(gobject.GObject):
 		if len(self.notebook.get_children()) == 0:
 			# create info tab for the first time
 			scroll = self.create_page(self.info_tab.content)
-			self.notebook.prepend_page(scroll, gtk.Label(self.info_tab.label))
+			self.notebook.prepend_page(scroll, Gtk.Label(self.info_tab.label))
 		else:
 			# update existing info tab
 			infoTab = self.notebook.get_nth_page(0).get_child()
@@ -360,21 +388,22 @@ class TabSearch(gobject.GObject):
 			for tab in self.tab_list:
 				if not(tab.label == "Not Found"): 
 					scroll = self.create_page(tab.content)
-					self.notebook.append_page(scroll, gtk.Label(tab.label))
+					self.notebook.append_page(scroll, Gtk.Label(tab.label))
 		self.tab_list = []
 		self.notebook.show()
 		self.vbox.show_all()
 
 	def create_page(self, text):
-		fontdesc = pango.FontDescription("Courier New 8")
-		textbuffer = gtk.TextBuffer(None)
+		fontdesc = Pango.FontDescription("Courier New 8")
+		textbuffer = Gtk.TextBuffer()
 		textbuffer.set_text(text)
-		textview = gtk.TextView(textbuffer)
+		textview = Gtk.TextView()
+		textview.set_buffer(textbuffer)
 		textview.set_editable(False)
 		textview.modify_font(fontdesc)
-		scroll = gtk.ScrolledWindow()
-		scroll.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-		scroll.set_shadow_type(gtk.SHADOW_IN)
+		scroll = Gtk.ScrolledWindow()
+		scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+		scroll.set_shadow_type(Gtk.ShadowType.IN)
 		scroll.add(textview) 
 		scroll.show()
 		return scroll
