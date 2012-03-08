@@ -32,6 +32,7 @@ import re
 from parser.GuitareTabParser import GuitareTabParser
 from parser.UltimateGuitarParser import UltimateGuitarParser
 from parser.AZChordsParser import AZChordsParser
+from parser.EChordsParser import EChordsParser
 from parser.LacuerdaParser import LacuerdaParser
 from Tab import Tab
 from TabSites import tab_sites
@@ -228,6 +229,9 @@ class TabSearch(GObject.Object):
 					elif s == 'az':
 						az = AZChordsParser(self.add_tab_to_notebook, self.update_info_tab)
 						az.tabs_finder(playing_artist, playing_title)
+					elif s == 'ec':
+						ec = EChordsParser(self.add_tab_to_notebook, self.update_info_tab)
+						ec.tabs_finder(playing_artist, playing_title)
 					elif s == 'lc':
 						lc = LacuerdaParser(self.add_tab_to_notebook, self.update_info_tab)
 						lc.tabs_finder(playing_artist, playing_title)
