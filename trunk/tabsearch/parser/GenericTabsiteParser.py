@@ -122,7 +122,8 @@ class GenericTabsiteParser(object):
 		tabs = []
 		for a in tree:
 			link = a.get('href')
-			tab = self.fetch_single_tab(link)
+			#tab = self.fetch_single_tab(link)
+			tab = self.fetch_single_tab(link,'',self.title)
 
 	def fetch_single_tab(self, url, type, title):
 		""" Fetches page from given url and fetches tabs """
