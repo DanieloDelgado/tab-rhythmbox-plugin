@@ -3,7 +3,7 @@
 
 The users that have Rhythmbox 0.13 or later must install the SVN version or the 0.5_beta deb package:
 
-# $ svn checkout http://tab-rhythmbox-plugin.googlecode.com/svn/trunk tab-rhythmbox-plugin-read-only
+ # $ svn checkout http://tab-rhythmbox-plugin.googlecode.com/svn/trunk tab-rhythmbox-plugin-read-only
  # $ cd tab-rhythmbox-plugin-read-only
  # $ sudo cp -r tabsearch /usr/lib/rhythmbox/plugins/
  # $ sudo cp tabsearch/tab-prefs.ui /usr/share/rhythmbox/plugins/tabsearch
