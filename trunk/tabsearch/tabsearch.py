@@ -29,6 +29,7 @@ from gi.repository import RB
 from gi.repository import WebKit
 from gi._glib import GError
 import re
+import rb
 from parser.GuitareTabParser import GuitareTabParser
 from parser.UltimateGuitarParser import UltimateGuitarParser
 from parser.AZChordsParser import AZChordsParser
@@ -38,13 +39,19 @@ from Tab import Tab
 from TabSites import tab_sites
 from Helper import remove_accents
 
+STOCK_IMAGE = "tab-rhythmbox"
+ICON_FILENAME = "tab-rhythmbox.svg"
+
 tab_search_ui = """
 <ui>
 	<toolbar name="ToolBar">
-		<toolitem name="TabSearch-1" action="ToggleTabSearch" />
+		<placeholder name="ToolBarPluginPlaceholder">
+			<toolitem name="TabSearch-1" action="ToggleTabSearch" />
+		</placeholder>
 	</toolbar>
 </ui>
 """
+
 
 from TabConfigureDialog import TabConfigureDialog
 
@@ -75,15 +82,17 @@ class TabSearch(GObject.Object):
 		self.sites = self.get_sites()
 		self.tab_list = []
 		self.info_tab = Tab('Info', 'Infos\n=====')
+		self.stock = self.get_stock_icon(ICON_FILENAME)
 
 		self.visible = True
 
 		self.init_gui()
-		self.connect_signals()
-		
-		self.action_toggle = ('ToggleTabSearch', Gtk.STOCK_INFO, _('TabSearch'),
-				None, _('Change the visibility of the tab search pane'),
-				self.toggle_visibility, True)
+		self.connect_signals()		
+
+		self.action_toggle = ('ToggleTabSearch', self.stock, _('TabSearch'),
+		 		None, _('Change the visibility of the tab search pane'),
+		 		self.toggle_visibility, True)
+
 		self.action_group = Gtk.ActionGroup('TabSearchActions')
 		self.action_group.add_toggle_actions([self.action_toggle])
 		
@@ -92,7 +101,7 @@ class TabSearch(GObject.Object):
 		if self.settings.get_boolean('visible') == False:
 			action = self.action_group.get_action('ToggleTabSearch')
 			action.activate();
-		
+
 		uim = self.sp.get_property('ui-manager')
 		uim.insert_action_group (self.action_group, 0)
 		self.ui_id = uim.add_ui_from_string(tab_search_ui)
@@ -118,7 +127,7 @@ class TabSearch(GObject.Object):
 		self.toolbar.add(self.toolitemEdit)
 		self.toolitemLoad = Gtk.ToolButton()
 		self.toolitemLoad.set_label('Load From Web')
-		self.toolitemLoad.set_stock_id(Gtk.STOCK_REFRESH)
+		self.toolitemLoad.set_stock_id(Gtk.STOCK_FIND)
 		self.toolitemLoad.connect('clicked', self.load_tabs_from_web)
 		self.toolitemLoad.set_sensitive(False)
 		self.toolbar.add(self.toolitemLoad)
@@ -131,9 +140,26 @@ class TabSearch(GObject.Object):
 		self.shell.add_widget(self.vbox, RB.ShellUILocation.RIGHT_SIDEBAR, expand=True, fill=True)
 		self.vbox.show_all()
 
+
+	def get_stock_icon(self, filename):
+		icon_file_path = rb.find_plugin_file(self.plugin, filename)
+		#icon_file_path = os.path.join(plugin.plugin_info.get_data_dir(), filename)
+		if icon_file_path is None:
+			print filename +" not found in "+self.plugin.plugin_info.get_data_dir()
+			return Gtk.STOCK_INFO
+		else:
+			iconsource = Gtk.IconSource()
+			iconsource.set_filename(icon_file_path)
+			iconset = Gtk.IconSet()
+			iconset.add_source(iconsource)
+			iconfactory = Gtk.IconFactory()
+			iconfactory.add(STOCK_IMAGE, iconset)
+			iconfactory.add_default()
+			return STOCK_IMAGE
+
 	# set the callback function 'playing_changed_cb'
 	def connect_signals(self):
-		self.player_cb_ids = (self.sp.connect('playing-changed', self.playing_changed_cb))
+		self.player_cb_ids = (self.sp.connect('playing-song-changed', self.playing_changed_cb))
 
 	# which sites did the user check in the configuration dialog?
 	def get_sites(self):
