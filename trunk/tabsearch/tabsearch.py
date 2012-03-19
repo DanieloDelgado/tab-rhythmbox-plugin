@@ -363,6 +363,7 @@ class TabSearch(GObject.Object):
 			result = self.file_res.load_contents_finish(result)
 		except GError:
 			print "Error: can't open file, maybe it's not there at all..."
+			self.add_tab_to_notebook(None, params)
 			return
 		successful = result[0]
 		data = result[1]
@@ -372,27 +373,34 @@ class TabSearch(GObject.Object):
 	def add_tab_to_notebook(self, data, params):
 		#print data
 		#print "add_tab_to_notebook !!!!"
-		doAutoLookup = False
+		if not self.settings.get_boolean('preventautoweblookup'):
+			doAutoLookup = True
+		else:
+			doAutoLookup = False
+
+		# local file not found
 		if data is None:
-			data = 'Illegal source selected...this shouldn\'t happen! Please contact plugin author!';
 			if params['source'] == 'hdd':
-				if not self.settings.get_boolean('preventautoweblookup'):
-					doAutoLookup = True
 				data = "\t   No tabs found on your hard disk.\n\t   Try checking the tab sites on the internet\n\t   by clicking on the 'load from web' button above."
+				self.load_tabs('web')
 			else:
 				data = "you should not see this, check source code!"
-				#data = "\t   Sorry! \""+title+"\" not found on selected tab sites.\n\t   Try checking other tab sites on the internet\n\t   by selecting other tab sites in the configuration dialog."
+			
 			self.update_info_tab('\t-> Nothing found!\n' + data)
 		else:
-			# inform user on info tab about success at fetching data
-			self.update_info_tab('\t-> tabs found on ' + params['source'] + ' for \'' + params['artist'] + '\' - \'' + params['title'] + '\'.')
-			tab = Tab('#' + str(len(self.notebook.get_children())) + ' ' + params['source'], data)
-			tab.set_meta('artist', params['artist'])
-			tab.set_meta('title', params['title'])
-			self.tab_list.append(tab)
-			self.update_notebook(params['source'], params['artist'], params['title'])
-		if doAutoLookup:
-			self.load_tabs('web')
+			if params['source'] == 'hdd':
+				if doAutoLookup:
+					self.load_tabs('web')
+				else:
+					self.update_info_tab('\t-> You choose not to lookup when local tab found...');
+			else:
+				# inform user on info tab about success at fetching data
+				self.update_info_tab('\t-> tabs found on ' + params['source'] + ' for \'' + params['artist'] + '\' - \'' + params['title'] + '\'.')
+				tab = Tab('#' + str(len(self.notebook.get_children())) + ' ' + params['source'], data)
+				tab.set_meta('artist', params['artist'])
+				tab.set_meta('title', params['title'])
+				self.tab_list.append(tab)
+				self.update_notebook(params['source'], params['artist'], params['title'])
 
 	def update_info_tab(self, new_content):
 		self.info_tab.add_content(new_content)
