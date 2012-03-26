@@ -80,6 +80,7 @@ class TabSearch(GObject.Object):
 
 		self.settings = Gio.Settings("org.gnome.rhythmbox.plugins.tabsearch")
 		self.sites = self.get_sites()
+		self.nr_sites = len(self.sites)
 		self.tab_list = []
 		self.info_tab = Tab('Info', 'Infos\n=====')
 		self.stock = self.get_stock_icon(ICON_FILENAME)
@@ -132,14 +133,35 @@ class TabSearch(GObject.Object):
 		self.toolitemLoad.set_sensitive(False)
 		self.toolbar.add(self.toolitemLoad)
 		self.vbox.pack_start(self.toolbar, expand = False, fill = True, padding = 0)
-		
+
 		self.notebook = Gtk.Notebook()
 		self.notebook.set_scrollable(True)
+
+		self.progressbar = Gtk.ProgressBar()
+		self.timeout = GObject.timeout_add(100, self.start_pulse)
 		
 		self.vbox.set_size_request(250, -1)
 		self.shell.add_widget(self.vbox, RB.ShellUILocation.RIGHT_SIDEBAR, expand=True, fill=True)
 		self.vbox.show_all()
 
+	def show_pulse(self):
+		if self.progressbar is not None:
+			self.vbox.remove(self.progressbar)
+			GObject.source_remove(self.timeout)
+		self.vbox.pack_end(self.progressbar, expand = False, fill = True, padding = 0)
+		self.timeout = GObject.timeout_add(100, self.start_pulse)
+		self.start_pulse()
+		
+	def hide_pulse(self):
+		self.nr_sites = self.nr_sites-1
+		print "Sites left to stop progressbar: "+str(self.nr_sites)
+		if self.nr_sites == 0:
+			self.vbox.remove(self.progressbar)
+			GObject.source_remove(self.timeout)
+
+	def start_pulse(self):
+		self.progressbar.pulse()
+		return True
 
 	def get_stock_icon(self, filename):
 		icon_file_path = rb.find_plugin_file(self.plugin, filename)
@@ -190,7 +212,7 @@ class TabSearch(GObject.Object):
 	# callback function that is triggered whenever there's 
 	# a change in played song title
 	def playing_changed_cb (self, playing, user_data):
-		print "There's been a change in playback ..."
+		print "There's been a change in playback ..."		
 		self.info_tab.set_content('Infos\n=====')
 		return self.load_tabs('hdd')
 
@@ -202,7 +224,7 @@ class TabSearch(GObject.Object):
 		playing_entry = None
 		if self.sp:
 			playing_entry = self.sp.get_playing_entry()
-		if playing_entry is None :
+		if playing_entry is None:
 			return
 
 #		playing_artist = self.db.entry_get (playing_entry, rhythmdb.PROP_ARTIST)
@@ -239,27 +261,37 @@ class TabSearch(GObject.Object):
 		
 		if source == 'hdd':
 			self.update_info_tab("\nchecking hdd for '" + playing_artist + "' and the song '" + playing_title + "'")
+			self.hide_pulse()
 			self.open_tabs_from_hdd(playing_artist, playing_title)
 		if source == 'web':
 			self.update_info_tab("\nchecking web for '" + playing_artist + "' and the song '" + playing_title + "'")
 			if not(playing_artist == ""):
+				# reset the number of sites in order to detect when the research finished
+				self.nr_sites = len(self.sites)		
+				self.show_pulse()
+
 				self.sites = self.get_sites()
 				for s in self.sites:
 					site_id = s
 					if s == 'gt':
-						gt = GuitareTabParser(self.add_tab_to_notebook, self.update_info_tab)
+						#gt = GuitareTabParser(self.add_tab_to_notebook, self.update_info_tab)
+						gt = GuitareTabParser(self.add_tab_to_notebook, self.notify_finish)
 						gt.tabs_finder(playing_artist, playing_title)
 					elif s == 'ug':
-						ug = UltimateGuitarParser(self.add_tab_to_notebook, self.update_info_tab)
+						#ug = UltimateGuitarParser(self.add_tab_to_notebook, self.update_info_tab)
+						ug = UltimateGuitarParser(self.add_tab_to_notebook, self.notify_finish)
 						ug.tabs_finder(playing_artist, playing_title)
 					elif s == 'az':
-						az = AZChordsParser(self.add_tab_to_notebook, self.update_info_tab)
+						#az = AZChordsParser(self.add_tab_to_notebook, self.update_info_tab)
+						az = AZChordsParser(self.add_tab_to_notebook, self.notify_finish)
 						az.tabs_finder(playing_artist, playing_title)
 					elif s == 'ec':
-						ec = EChordsParser(self.add_tab_to_notebook, self.update_info_tab)
+						#ec = EChordsParser(self.add_tab_to_notebook, self.update_info_tab)
+						ec = EChordsParser(self.add_tab_to_notebook, self.notify_finish)
 						ec.tabs_finder(playing_artist, playing_title)
 					elif s == 'lc':
-						lc = LacuerdaParser(self.add_tab_to_notebook, self.update_info_tab)
+						#lc = LacuerdaParser(self.add_tab_to_notebook, self.update_info_tab)
+						lc = LacuerdaParser(self.add_tab_to_notebook, self.notify_finish)
 						lc.tabs_finder(playing_artist, playing_title)
 
 	def deactivate (self, shell):
@@ -269,7 +301,7 @@ class TabSearch(GObject.Object):
 		self.db = None
 		self.plugin = None
 		shell.remove_widget(self.vbox, RB.ShellUILocation.RIGHT_SIDEBAR)
-		uim = shell.get_ui_manager()
+		uim = self.sp.get_property('ui-manager')		
 		uim.remove_ui(self.ui_id)
 		uim.remove_action_group(self.action_group)
 
@@ -381,18 +413,23 @@ class TabSearch(GObject.Object):
 		# local file not found
 		if data is None:
 			if params['source'] == 'hdd':
-				data = "\t   No tabs found on your hard disk.\n\t   Try checking the tab sites on the internet\n\t   by clicking on the 'load from web' button above."
+				data = "\t   No tabs found on your hard disk."
+				if doAutoLookup:
+					data = data + "\n\t   Try checking the tab sites on the internet\n\t   by clicking on the 'load from web' button above."
+				else:
+					data = data + "\n\t   Wait for the plugin research from web..."
+
+				self.update_info_tab('\t-> Nothing found!\n' + data)
 				self.load_tabs('web')
 			else:
-				data = "you should not see this, check source code!"
-			
-			self.update_info_tab('\t-> Nothing found!\n' + data)
+				data = "you should not see this, check source code!"			
+				self.update_info_tab('\t-> Nothing found!\n' + data)
 		else:
 			if params['source'] == 'hdd':
 				if doAutoLookup:
 					self.load_tabs('web')
 				else:
-					self.update_info_tab('\t-> You choose not to lookup when local tab found...');
+					self.update_info_tab('\t-> You choose not to lookup when local tab is found...');
 			else:
 				# inform user on info tab about success at fetching data
 				self.update_info_tab('\t-> tabs found on ' + params['source'] + ' for \'' + params['artist'] + '\' - \'' + params['title'] + '\'.')
@@ -416,6 +453,10 @@ class TabSearch(GObject.Object):
 			textbuffer.set_text(self.info_tab.content)
 		self.notebook.show()
 		self.vbox.show_all()
+
+	def notify_finish(self, content):
+		self.update_info_tab(content)
+		self.hide_pulse()
 
 	def update_notebook(self, source, artist, title):
 		""" Update notebook """

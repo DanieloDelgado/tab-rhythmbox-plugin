@@ -115,6 +115,7 @@ class GenericTabsiteParser(object):
 					'\t   and report at http://code.google.com/p/tab-rhythmbox-plugin/ if the tabs\n' + 
 					'\t   for this song are linked to on this page:\n\t   ' + url)
 		else:
+			self.callback_info('')
 			self.fetch_tabs(tree)
 
 	def fetch_tabs(self, tree):
