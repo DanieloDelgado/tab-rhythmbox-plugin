@@ -1,7 +1,13 @@
 #labels Featured
 == Rhythmbox 3 ==
 
-The users that have Rhythmbox 0.13 or later must install the SVN version or the 0.5_beta deb package:
+The users that have Rhythmbox 0.13 or later must install the SVN version (or the 0.5_beta deb package) with the following commands:
+
+ # wget http://tab-rhythmbox-plugin.googlecode.com/svn/trunk/svn_install.sh
+ # sudo chmod +x svn_install.sh
+ # sudo ./svn_install.sh
+
+Or manually enter:
 
  # $ svn checkout http://tab-rhythmbox-plugin.googlecode.com/svn/trunk tab-rhythmbox-plugin-read-only
  # $ cd tab-rhythmbox-plugin-read-only
