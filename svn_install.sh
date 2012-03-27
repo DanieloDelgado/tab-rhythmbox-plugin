@@ -13,7 +13,8 @@ else
 	echo "Copying plugin files in /usr/lib/rhythmbox/plugins/"
 	cp -r tabsearch /usr/lib/rhythmbox/plugins/
 
-	echo "Copying plugin files in /usr/lib/rhythmbox/plugins/"
+	echo "Copying plugin files in /usr/share/rhythmbox/plugins/"
+	mkdir /usr/share/rhythmbox/plugins/tabsearch
 	cp tabsearch/tab-prefs.ui /usr/share/rhythmbox/plugins/tabsearch
 	cp tab-rhythmbox.svg /usr/share/rhythmbox/plugins/tabsearch
 	
